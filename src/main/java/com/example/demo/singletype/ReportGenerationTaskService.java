@@ -1,5 +1,6 @@
 package com.example.demo.singletype;
 
+import com.example.demo.Jitter;
 import com.example.demo.TaskState;
 import io.micrometer.core.annotation.Timed;
 import lombok.RequiredArgsConstructor;
@@ -35,7 +36,7 @@ public class ReportGenerationTaskService {
             9, Duration.ofDays(1)
     );
 
-    private static final int MAX_RETRY_COUNT = RETRY_DELAYS.size();
+    public static final int MAX_RETRY_COUNT = RETRY_DELAYS.size();
 
     private final ReportGenerationRepository repository;
     private final TransactionTemplate transactionTemplate;
@@ -110,8 +111,8 @@ public class ReportGenerationTaskService {
         task.setState(TaskState.FAILED);
         task.setRetryCount(currentRetry + 1);
         task.setErrorMessage(e.getMessage());
-        task.setExecuteAt(Instant.now().plus(
-                RETRY_DELAYS.getOrDefault(currentRetry, RETRY_DELAYS.get(RETRY_DELAYS.size() - 1))));
+        task.setExecuteAt(Jitter.nextAttempt(
+                RETRY_DELAYS.getOrDefault(currentRetry, RETRY_DELAYS.get(RETRY_DELAYS.size() - 1)), Instant.now()));
         repository.save(task);
         metrics.recordFailed();
     }

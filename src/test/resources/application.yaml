@@ -1,4 +1,7 @@
 spring:
+  task:
+    execution:
+      mode: force        # keep Boot's applicationTaskExecutor next to outboxExecutor
   datasource:
     url: jdbc:postgresql://localhost:5435/mydatabase?stringtype=unspecified
     username: user

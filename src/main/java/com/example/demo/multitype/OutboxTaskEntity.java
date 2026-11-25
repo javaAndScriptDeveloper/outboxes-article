@@ -52,6 +52,9 @@ public class OutboxTaskEntity {
     @Column(nullable = false)
     Instant updatedAt;
 
+    @Column(insertable = false, updatable = false)
+    Long seq;
+
     Instant heartbeatAt;
 
     Instant executeAt;

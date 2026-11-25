@@ -7,6 +7,7 @@ import com.example.demo.multitype.OutboxTaskType;
 import com.example.demo.singletype.ReportGenerationPayload;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
 import java.util.UUID;
@@ -38,9 +39,13 @@ public class ReportGenerationOutboxHandler implements OutboxTaskHandler<ReportGe
         var reportId = "report-" + taskId;
         log.info("Generating report {} from {} to {}", reportId, payload.getFrom(), payload.getTo());
 
-        generatedReportRepository.save(GeneratedReport.builder()
-                .idempotencyKey(taskId)
-                .reportId(reportId)
-                .build());
+        try {
+            generatedReportRepository.saveAndFlush(GeneratedReport.builder()
+                    .idempotencyKey(taskId)
+                    .reportId(reportId)
+                    .build());
+        } catch (DataIntegrityViolationException e) { // saveAndFlush: surface it here, not at commit
+            log.info("Outbox task {} was completed concurrently — treating as done", taskId);
+        }
     }
 }

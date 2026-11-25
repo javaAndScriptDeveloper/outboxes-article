@@ -40,7 +40,7 @@ The endpoint returns `202 Accepted`. The outbox worker picks up the task within 
 Open Grafana at http://localhost:3000 — the **Transactional Outbox** dashboard loads automatically with four panels:
 | Panel | What it shows |
 |-------|--------------|
-| Queue Depth | Live count of PENDING + FAILED tasks |
+| Queue Depth | Live count of tasks that can still run (PENDING + FAILED under the retry cap) |
 | Completed (last 5 min) | Tasks successfully processed |
 | Failed (last 5 min) | Tasks that errored |
 | Processing Latency p50/p95/p99 | End-to-end task duration |
@@ -58,6 +58,12 @@ Each test class corresponds to an article section:
 | `ReportGenerationTaskServiceProcessingStatusTest` | Part 2/3 — PROCESSING state and version increment |
 | `Part3RetryAndFailureTest` | Part 3 — retry count gates eligibility |
 | `Part4ExponentialBackoffTest` | Part 4 — execute_at controls retry timing |
-| `Part5HeartbeatStuckTaskTest` | Part 5 — stale heartbeat triggers recovery |
 | `Part6MultiTypeDispatchTest` | Part 6 — dispatcher routes to correct handler |
+| `JitterTest` | Part 4 — jittered retries and bulk submissions |
+| `Part25ApplicationEventsTest` | Part 2.5 — `@Async` listener on `outboxExecutor`, zero-select with lease check, completion buffer, bulk jitter |
+| `Part5HeartbeatStuckTaskTest` | Part 5 — stale heartbeat triggers recovery |
+| `Part5RecoveryLockingTest` | Part 5 / 7.5 — overlapping recovery runs never reset the same task |
+| `Part75FetchAndCleanupTest` | Part 7.5 / 9 — batch claim, drain loop, batched cleanup with SKIP LOCKED |
 | `OutboxTaskIdempotencyTest` | Part 10 — idempotency prevents duplicate work |
+| `Part11MonitoringTest` | Part 11 — pending vs dead-task gauges |
+| `Part12PayloadVersioningTest` | Part 12 — rows written by a newer version still load |

@@ -1,5 +1,6 @@
 package com.example.demo.multitype;
 
+import com.example.demo.Jitter;
 import com.example.demo.TaskState;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
@@ -10,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Duration;
+import java.util.Comparator;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -38,7 +40,7 @@ public class OutboxTaskService {
             9, Duration.ofDays(1)
     );
 
-    private static final int MAX_RETRY_COUNT = RETRY_DELAYS.size();
+    public static final int MAX_RETRY_COUNT = RETRY_DELAYS.size();
 
     private final OutboxTaskRepository repository;
     private final TransactionTemplate transactionTemplate;
@@ -101,13 +103,6 @@ public class OutboxTaskService {
                 });
     }
 
-    @Transactional
-    public void cleanupProcessedTasks() {
-        var cutoff = Instant.now().minus(CLEANUP_RETENTION_DAYS, ChronoUnit.DAYS);
-        int deleted = repository.deleteByStateInAndUpdatedAtBefore(List.of(TaskState.COMPLETED), cutoff);
-        log.info("Cleanup: removed {} completed outbox tasks older than {} days", deleted, CLEANUP_RETENTION_DAYS);
-    }
-
     @SuppressWarnings("unchecked")
     private void dispatch(OutboxTaskEntity task) throws Exception {
         var handler = (OutboxTaskHandler<Object>) handlers.get(task.getTaskType());
@@ -141,8 +136,49 @@ public class OutboxTaskService {
         task.setState(TaskState.FAILED);
         task.setRetryCount(currentRetry + 1);
         task.setErrorMessage(exception.getMessage());
-        task.setExecuteAt(Instant.now().plus(
-                RETRY_DELAYS.getOrDefault(currentRetry, RETRY_DELAYS.get(RETRY_DELAYS.size() - 1))));
+        task.setExecuteAt(Jitter.nextAttempt(
+                RETRY_DELAYS.getOrDefault(currentRetry, RETRY_DELAYS.get(RETRY_DELAYS.size() - 1)), Instant.now()));
         repository.save(task);
+    }
+
+    /** Part 7.5: keep claiming batches until the queue is empty or the time budget runs out. */
+    public int drain(int batchSize, Duration budget) {
+        var deadline = Instant.now().plus(budget);
+        int processed = 0;
+        List<OutboxTaskEntity> batch;
+        do {
+            batch = repository.claimBatch(batchSize, MAX_RETRY_COUNT).stream()
+                    .sorted(Comparator.comparing(OutboxTaskEntity::getSeq)) // RETURNING order is not guaranteed
+                    .toList();
+            batch.forEach(this::processClaimedTask);
+            processed += batch.size();
+        } while (!batch.isEmpty() && Instant.now().isBefore(deadline));
+        return processed;
+    }
+
+    /** Part 9: deliberately NOT @Transactional — every batch commits on its own. */
+    public int cleanupProcessedTasks(int batchSize, Duration budget) {
+        var cutoff = Instant.now().minus(CLEANUP_RETENTION_DAYS, ChronoUnit.DAYS);
+        var deadline = Instant.now().plus(budget);
+        int total = 0;
+        int deleted;
+        do {
+            deleted = repository.deleteCompletedBatch(cutoff, batchSize); // own transaction
+            total += deleted;
+        } while (deleted == batchSize && Instant.now().isBefore(deadline));
+        log.info("Cleanup: removed {} completed outbox tasks older than {} days", total, CLEANUP_RETENTION_DAYS);
+        return total;
+    }
+
+    private void processClaimedTask(OutboxTaskEntity task) {
+        try (var heartbeat = heartbeatFactory.start(task.getId())) {
+            try {
+                dispatch(task);
+                markCompleted(task);
+            } catch (Exception e) {
+                markFailed(task, e);
+                log.error("Failed to process outbox task {} ({}); marked as failed", task.getId(), task.getTaskType(), e);
+            }
+        }
     }
 }

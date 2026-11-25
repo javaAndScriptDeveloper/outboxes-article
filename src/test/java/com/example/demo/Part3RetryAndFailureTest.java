@@ -47,7 +47,7 @@ class Part3RetryAndFailureTest extends BaseIntegrationTest {
     }
 
     @Test
-    void taskAtMaxRetryCountIsStillEligibleAndCompleted() {
+    void taskAtMaxRetryCountIsNoLongerPickedUp() {
         var task = repository.save(ReportGenerationEntity.builder()
                 .state(TaskState.FAILED)
                 .payload(ReportGenerationPayload.builder()
@@ -61,6 +61,7 @@ class Part3RetryAndFailureTest extends BaseIntegrationTest {
         taskService.fetchAndProcess();
 
         var found = repository.findById(task.getId()).orElseThrow();
-        assertThat(found.getState()).isEqualTo(TaskState.COMPLETED);
+        assertThat(found.getState()).isEqualTo(TaskState.FAILED);
+        assertThat(found.getRetryCount()).isEqualTo(MAX_RETRY_COUNT);
     }
 }

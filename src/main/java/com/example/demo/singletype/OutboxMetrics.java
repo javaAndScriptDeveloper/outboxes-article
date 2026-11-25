@@ -32,8 +32,16 @@ public class OutboxMetrics {
     @PostConstruct
     void registerGauge() {
         Gauge.builder("outbox.tasks.pending", repository,
-                        repo -> repo.countByStateIn(List.of(TaskState.PENDING, TaskState.FAILED)))
-                .description("Tasks waiting to be processed")
+                        repo -> repo.countByStateInAndRetryCountLessThan(
+                                List.of(TaskState.PENDING, TaskState.FAILED), ReportGenerationTaskService.MAX_RETRY_COUNT))
+                .description("Tasks that can still run")
+                .register(meterRegistry);
+        // FAILED rows that used up their retries stay as an audit trail; counting them as "pending"
+        // would make the backlog grow forever. They get their own gauge, which should be zero.
+        Gauge.builder("outbox.tasks.dead", repository,
+                        repo -> repo.countByStateAndRetryCountGreaterThanEqual(
+                                TaskState.FAILED, ReportGenerationTaskService.MAX_RETRY_COUNT))
+                .description("Tasks that exhausted their retries and need a human")
                 .register(meterRegistry);
     }
 }

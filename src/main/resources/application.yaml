@@ -1,4 +1,15 @@
 spring:
+  task:
+    execution:
+      mode: force        # keep Boot's applicationTaskExecutor next to outboxExecutor
+    scheduling:
+      pool:
+        size: 4          # default is 1: cleanup would block polling
+      shutdown:
+        await-termination: true
+        await-termination-period: 15s
+  lifecycle:
+    timeout-per-shutdown-phase: 15s   # 15 + 15 + 15 must fit terminationGracePeriodSeconds (60)
   application:
     name: demo
   datasource:
@@ -13,6 +24,8 @@ spring:
         format_sql: true
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.yaml
+server:
+  shutdown: graceful
 management:
   endpoints:
     web:
